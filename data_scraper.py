@@ -8,7 +8,7 @@ from tqdm import tqdm
 We want to scrape the ONS page for CPI data. Use requests to open the page, then use BeautifulSoup to parse the HTML.
 '''
 
-def get_web_data(url):
+def get_web_data(url: str) -> str:
     """
     Fetch HTML content from given URL.
 

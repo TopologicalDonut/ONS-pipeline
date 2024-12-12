@@ -2,6 +2,7 @@ import zipfile
 from pathlib import Path
 import polars as pl
 from typing import Optional
+import datetime
 
 """
 This script is for processing the ONS data so that it's ready for storing in the database.
@@ -42,25 +43,6 @@ def extract_zip_files(
     except Exception as e:
         print(f'Error extracting zip files: {e}')
         return False
-    
-def read_data(data_folder: Path) -> pl.DataFrame:
-    '''
-    Reads the data from the data folder.
-    
-    Notes
-    -----
-    The data is read from the csv and xlsx files in the data folder.
-    '''
-    data = pl.DataFrame()
-    
-    for filepath in data_folder.rglob('*'):
-        if filepath.suffix.lower() in ('.csv', '.xlsx'):
-            print(f'Reading {filepath}')
-            new_data = _read_file(filepath)
-            if new_data is not None:
-                data = data.vstack(new_data)
-
-    return data
 
 def _load_extracted_files_list(target_folder: Path) -> set[str]:
     """
@@ -95,8 +77,29 @@ def _process_single_zip(
         else:
             print(f'No new files in {zip_path}')
         
-def _read_file(file_path: Path) -> Optional[pl.DataFrame]:
-    """Read a single data file into a DataFrame."""
+def process_all_files(data_folder: Path) -> pl.DataFrame:
+    '''
+    Reads all the data from the data folder to create one cleaned dataframe.
+    
+    Notes
+    -----
+    The data is read from the csv and xlsx files in the data folder.
+    '''
+    data = pl.DataFrame()
+    
+    for filepath in data_folder.rglob('*'):
+        if filepath.suffix.lower() in ('.csv', '.xlsx'):
+            print(f'Reading {filepath}')
+            new_data = _read_data(filepath)
+            if new_data is not None:
+                data = data.vstack(new_data)
+
+    return data
+
+def _read_data(file_path: Path) -> Optional[pl.DataFrame]:
+    """
+    Read a single ONS data file into a DataFrame.
+    """
     try:
         if file_path.suffix.lower() == ".csv":
             return pl.read_csv(file_path)
@@ -104,6 +107,35 @@ def _read_file(file_path: Path) -> Optional[pl.DataFrame]:
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
         return None
+
+def _process_data(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Cleans the ONS data by extracting the columns we want and ensuring they are in
+    the right format.
+    """
+    return(df
+        .select([
+             'INDEX_DATE',
+             'ITEM_ID',
+             'ITEM_DESC',
+             'ALL_GM_INDEX'
+        ])
+        .with_columns([
+            pl.col('INDEX_DATE')
+                .str.replace('[^0-9]', '')
+                .map_elements(lambda x: 
+                    datetime.strptime(x, '%Y%m').date()
+                    if len(x) == 6 and 1 <= int(x[4:]) <= 12
+                    else None
+                )
+                .alias('date'),
+
+            pl.col('ITEM_ID')
+                .str.strip()
+                .map_elements()
+        ])
+    )
+
 
 def main():
 
