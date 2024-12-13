@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
-import os
+from pathlib import Path
+import zipfile
 import time
 from tqdm import tqdm
 
@@ -8,19 +9,9 @@ from tqdm import tqdm
 We want to scrape the ONS page for CPI data. Use requests to open the page, then use BeautifulSoup to parse the HTML.
 '''
 
-def get_web_data(url: str) -> str:
+def get_web_data(url: str) -> str | None:
     """
     Fetch HTML content from given URL.
-
-    Parameters
-    ----------
-    url : str
-        The URL to fetch data from.
-
-    Returns
-    -------
-    str or None
-        HTML content if successful, None if any error occurs.
     """
     try:
         response = requests.get(url)
@@ -41,25 +32,13 @@ def get_web_data(url: str) -> str:
     html = response.text
     return html
 
-def get_data_links(html, file_types = ['.csv', '.xlsx', '.zip'], search_term = ['upload-itemindices', '/itemindices']):
+def get_data_links(
+    html: str, 
+    file_types: list[str] = ['.csv', '.xlsx', '.zip'], 
+    search_term: list[str] = ['upload-itemindices', '/itemindices']
+) -> list[str]:
     """
     Get data links from the HTML content.
-
-    Parameters
-    ----------
-    html : str
-        The HTML content to parse.
-
-    file_types : list of str, optional
-        List of file extensions to filter links.
-
-    search_term : list of str, optional
-        List of search terms to filter. This is in case the naming convention ever changes.
-
-    Returns
-    -------
-    list of str
-        List of data links found in the HTML content.
 
     Notes
     -----
@@ -75,40 +54,73 @@ def get_data_links(html, file_types = ['.csv', '.xlsx', '.zip'], search_term = [
 
     return data_links
 
-def download_data(data_links, folder, base_url):
+def download_and_extract_data(
+    data_links: list[str], 
+    base_url: str,
+    folder: Path = Path('data'), 
+) -> None:
     """
-    Download data from given links to the specified folder.
-
-    Parameters
-    ----------
-    data_links: list of str
-        List of relative paths that are appended to the base_url to download the data.
-
-    folder: str
-        The folder to save the downloaded data.
-
-    base_url: str
-        The base URL to append the relative paths to.
+    Download data from given links to the specified folder, extract any zips,
+    and clean up the zip files while maintaining extraction history.
     """
-    os.makedirs(folder, exist_ok=True) # exist_ok=True prevents an error if the folder already exists
+    download_folder = folder
+    extract_folder = download_folder / 'extracted_files'
+    download_folder.mkdir(exist_ok=True)
+    extract_folder.mkdir(exist_ok=True)
+    
+    processed_zips_log = extract_folder / 'processed_zips.txt'
+    if processed_zips_log.exists():
+        processed_zips = set(processed_zips_log.read_text().splitlines())
+    else:
+        processed_zips = set()
 
-    # tqdm gives a nice progress bar
-    for data_link in tqdm(data_links, desc="Downloading files"):
+    # Track what happened to print summary at the end
+    stats = {
+        'zips_skipped': 0,
+        'zips_processed': 0,
+        'files_skipped': 0,
+        'files_downloaded': 0
+    }
 
-        filename = os.path.join(folder, data_link.split('/')[-1]) # the .split splits by slash, then gets the last element, which is the filename.
+    for data_link in tqdm(data_links, desc="Processing files"):
+        filename = Path(data_link).name
+        file_path = download_folder / filename
+        
+        if filename.endswith('.zip'):
+            if filename in processed_zips:
+                stats['zips_skipped'] += 1
+                continue
+                
+            time.sleep(2)
+            response = requests.get(base_url + data_link)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+            
+            with zipfile.ZipFile(file_path) as zf:
+                zf.extractall(extract_folder)
+            
+            processed_zips.add(filename)
+            processed_zips_log.write_text('\n'.join(sorted(processed_zips)))
+            file_path.unlink()
+            stats['zips_processed'] += 1
+            
+        else:
+            if file_path.exists():
+                stats['files_skipped'] += 1
+                continue
+                
+            time.sleep(2)
+            response = requests.get(base_url + data_link)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+            stats['files_downloaded'] += 1
 
-        # Don't want to redownload things we already have, so first check if file exists.
-        if os.path.exists(filename):
-            print(f"File {filename} already exists, skipping download.")
-            continue
-
-        time.sleep(5) # Be nice to the server, don't hammer it with requests.
-        response = requests.get(base_url + data_link)
-        with open(filename, 'wb') as file:
-            file.write(response.content)
+    # Show summary at the end
+    print("\nDownload Summary:")
+    print(f"Zip files: {stats['zips_processed']} processed, {stats['zips_skipped']} skipped")
+    print(f"Other files: {stats['files_downloaded']} downloaded, {stats['files_skipped']} skipped")
 
 def main():
-
     url = "https://www.ons.gov.uk/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes"
 
     html = get_web_data(url)
@@ -118,10 +130,10 @@ def main():
     
     data_links = get_data_links(html)
 
-    folder = "data"
+    folder = Path('data')
     base_url = "https://www.ons.gov.uk"
 
-    download_data(data_links, folder, base_url)
+    download_and_extract_data(data_links, base_url, folder)
 
 if __name__ == "__main__":
     main()
