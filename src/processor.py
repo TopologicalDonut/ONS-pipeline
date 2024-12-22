@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Callable
-from datetime import datetime, date
+from datetime import datetime
 import polars as pl
 from pathlib import Path
 import json 
@@ -25,7 +25,7 @@ The implementation has some dataclasses defined to make it easy to create and us
 type ValidationFunction = Callable[[pl.Expr], pl.Expr]
 type ValidationRule = list[tuple[ValidationFunction, str]]
 
-logger = setup_logger(__name__)
+logger = setup_logger(__name__, logging.INFO)
 
 @dataclass(frozen = True)
 class ValidationConfig:

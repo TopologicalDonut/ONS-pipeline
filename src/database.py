@@ -1,28 +1,23 @@
 import duckdb
 import polars as pl
 from dataclasses import dataclass
-from datetime import date
 from typing import Protocol
+from abc import ABC, abstractmethod
+import logging
 
 from src.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger(__name__, logging.INFO)
 
 # Custom type to make classes and functions more self-evident.
 type SQLType = str
-type QueryResult = pl.DataFrame
-
-# This isn't strictly needed for the pipeline, but here for possible future changes where a different db is used.
-class DatabaseHandler(Protocol):
-    def execute(self, query: str) -> QueryResult: ...
-    def close(self) -> None: ...
+type Query = str
 
 @dataclass(frozen = True)
 class TableConfig:
     """Configuration for database table structure and column definitions.
     
-    Entity and measurement columns are for naming and declaring variable types aside from the 
-    primary keys.
+    Entity and measurement columns are for naming and declaring variable types aside from the primary keys.
     """
     id_column: str
     date_column: str
@@ -32,18 +27,77 @@ class TableConfig:
     entity_table: str = "items"
     data_table: str = "cpi_data"
 
-class DuckDBHandler:
-    def __init__(self, db_path: str):
-        self.conn = duckdb.connect(db_path)
+class DatabaseConnection(Protocol):
+    def execute(self, query: Query) -> None:
+        pass
 
-    def execute(self, query: str) -> QueryResult:
-        return self.conn.execute(query).pl()
-    
     def close(self) -> None:
-        self.conn.close()
+        pass
+
+class SQLDialiect(ABC):
+    """Abstract base class for SQL dialects. This is to make it easier to switch to another database manager e.g. postgres."""
+
+    @abstractmethod
+    def create_entity_table(self, config: TableConfig) -> str:
+        pass
+
+    @abstractmethod
+    def create_data_table(self, config: TableConfig) -> str:
+        pass
+    
+    @abstractmethod
+    def bulk_upsert(self, table_name: str, columns: list[str]) -> str:
+        pass
+
+    @abstractmethod
+    def count_rows(self, table_name: str) -> str:
+        pass
+
+class DuckDBDialect(SQLDialiect):
+    
+    def create_entity_table(self, config: TableConfig) -> Query:
+
+        cols = [f'{config.id_column} VARCHAR PRIMARY KEY'] + [f'{name} {dtype}' for name, dtype in config.entity_columns.items()]
+
+        return f"""
+            CREATE TABLE IF NOT EXISTS {config.entity_table} (
+                {', '.join(cols)}
+            )
+        """
+    
+    def create_data_table(self, config: TableConfig) -> Query:
+
+        cols = [
+            f'{config.date_column} DATE',
+            f'{config.id_column} VARCHAR',
+            *[f'{name} {dtype}' for name, dtype in config.measurement_columns.items()]
+        ]
+        
+        constraints = [
+            f'PRIMARY KEY ({config.date_column}, {config.id_column})',
+            f'FOREIGN KEY ({config.id_column}) REFERENCES {config.entity_table}({config.id_column})'
+        ]
+
+        return f"""
+            CREATE TABLE IF NOT EXISTS {config.data_table} (
+                {', '.join(cols)},
+                {', '.join(constraints)}
+            )
+        """
+
+    def bulk_upsert(self, table_name: str, columns: list[str], source_name: str) -> Query:
+        return f"""
+            INSERT OR REPLACE INTO {table_name}
+                SELECT {', '.join(columns)} FROM {source_name}
+            )   
+        """
+    
+    def count_rows(self, table_name: str) -> Query:
+        return f'SELECT COUNT(*) FROM {table_name}'
 
 class DataManager:
-    def __init__(self, db: DatabaseHandler, config: TableConfig):
+
+    def __init__(self, db_path, config: TableConfig):
         self.db = db
         self.config = config
 

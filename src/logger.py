@@ -3,7 +3,7 @@ from pathlib import Path
 
 def setup_logger(
     name: str,
-    level: int = logging.INFO, 
+    level: int, 
     log_dir: Path = Path('logs'),
     add_file_handler: bool = False
 ) -> logging.Logger:
