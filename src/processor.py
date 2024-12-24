@@ -14,7 +14,7 @@ This script is for processing ONS data so that it's ready for database storage.
 
 To validate the data, should ensure:
     1. No null values
-    2. Date in YYYYMM format
+    2. Date in YYYYMM format and then converted into YYYY-MM-DD string (we don't use datetime b/c duckdb converts str to date).
     3. Item desc has no leading/trailing whitespace
     4. Item index is a valid index i.e. >= 0 float
     5. No duplicate date/item_id pairs
@@ -152,7 +152,7 @@ def process_data(
 
     return df, val_results
 
-def main():
+def main(input_df: pl.DataFrame) -> pl.DataFrame:
 
     ons_validations = ValidationConfig(
         columns={
@@ -183,10 +183,8 @@ def main():
     )
 
     try:
-        raw_data = src.reader.main()
-
         clean_data, validation_val_results = process_data(
-            raw_data, 
+            input_df, 
             ons_validations
         )
 

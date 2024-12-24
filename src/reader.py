@@ -96,7 +96,7 @@ def read_data(
     
     return pl.concat(data_frames)
 
-def main():
+def main() -> pl.DataFrame:
 
     COL_MAPPINGS = {
         'INDEX_DATE': 'date',
@@ -107,7 +107,7 @@ def main():
     
     df = read_data(COL_MAPPINGS)
 
-    print(f"Read {df.height} rows from data")
+    logger.info(f"Read {df.height} rows from data")
     print(df.head(10))
     
     return df

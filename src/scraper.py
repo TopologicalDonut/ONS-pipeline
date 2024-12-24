@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 
-from logger import setup_logger
+from src.logger import setup_logger
 
 '''
 We want to scrape the ONS page for CPI data. Use requests to open the page, then use BeautifulSoup to parse the HTML.
 '''
+
+logger = setup_logger(__name__, logging.INFO)
 
 @dataclass
 class RateLimiter:
@@ -30,12 +32,12 @@ class RateLimiter:
         self.last_request = datetime.now()
 
 class WebScraper:
-    def __init__(self, BASE_URL: str, rate_limit: float, log_file: str | None = None):
+    def __init__(self, BASE_URL: str, rate_limit: float, logger: logging.Logger):
 
         self.BASE_URL = BASE_URL
         self.session = requests.Session()
         self.rate_limiter = RateLimiter(rate_limit)
-        self.logger = setup_logger(__name__)
+        self.logger = logger
         self.logger.info(f"Initializing WebScraper with base URL: {BASE_URL}, rate limit: {rate_limit} req/s")   
 
     def get_web_data(self, url: str) -> str | None:
@@ -157,7 +159,7 @@ def main():
     FILE_TYPES = [".csv", ".xlsx", ".zip",]
     SEARCH_TERMS = ["upload-itemindices", "/itemindices"]
 
-    scraper = WebScraper(BASE_URL, rate_limit = 1.5)
+    scraper = WebScraper(BASE_URL, rate_limit = 1.5, logger = logger)
     
     if html := scraper.get_web_data(TARGET_URL):
         data_links = scraper.get_data_links(html, FILE_TYPES, SEARCH_TERMS)
