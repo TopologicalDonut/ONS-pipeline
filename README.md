@@ -2,7 +2,7 @@
 
 This is a data pipeline that scrapes item level CPI data from the Office of National Statistic's website (this [section](https://www.ons.gov.uk/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes) in particular), validates it, and loads it into a DuckDB database.
 
-# Usage
+## Usage
 
 Currently only an `environment.yml` is available for conda users. A `requirements.txt` will be made soon for pip + virtualenv.
 
