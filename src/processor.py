@@ -6,7 +6,6 @@ from pathlib import Path
 import json 
 import logging
 
-import src.reader
 from src.logger import setup_logger
 
 """
@@ -26,6 +25,9 @@ type ValidationFunction = Callable[[pl.Expr], pl.Expr]
 type ValidationRule = list[tuple[ValidationFunction, str]]
 
 logger = setup_logger(__name__, logging.INFO)
+
+DATA_DIR = Path(__file__).parent.parent / 'data'
+VALIDATION_DIR = DATA_DIR / 'validation_problems'
 
 @dataclass(frozen = True)
 class ValidationConfig:
@@ -94,7 +96,7 @@ class ValidationResults:
 def process_data(
     df: pl.DataFrame,
     config: ValidationConfig,
-    problems_path: Path | None = Path('data/validation_problems')
+    problems_path: Path | None = VALIDATION_DIR
 ) -> tuple[pl.DataFrame, ValidationResults]:
     """
     Parameters

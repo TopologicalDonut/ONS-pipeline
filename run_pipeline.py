@@ -1,34 +1,19 @@
 import logging
-from pathlib import Path
 
 from src.logger import setup_logger
-from src.scraper import WebScraper
+from src.scraper import main as scrape_data
 from src.reader import main as read_data
 from src.processor import main as process_data
 from src.database import main as load_database
 
 logger = setup_logger(__name__, logging.INFO)
 
-def run_pipeline(
-    data_dir: Path = Path('data'),
-    db_path: str = 'database/ons_cpi.db'
-) -> bool:
-    
+def run_pipeline() -> bool:
     try:
         logger.info("Starting pipeline")
         
         logger.info("Step 1: Scraping data")
-        BASE_URL = 'https://www.ons.gov.uk'
-        TARGET_URL = f'{BASE_URL}/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes'
-        FILE_TYPES = [".csv", ".xlsx", ".zip"]
-        SEARCH_TERMS = ["upload-itemindices", "/itemindices"]
-        
-        scraper = WebScraper(BASE_URL, rate_limit=1.5, logger=logger)
-        if html := scraper.get_web_data(TARGET_URL):
-            data_links = scraper.get_data_links(html, FILE_TYPES, SEARCH_TERMS)
-            scraper.process_files(data_links, data_dir)
-        else:
-            raise RuntimeError("Failed to fetch data from ONS website")
+        scrape_data()
         
         logger.info("Step 2: Reading and combining data")
         raw_data = read_data()
@@ -41,10 +26,10 @@ def run_pipeline(
             raise RuntimeError("Failed to process data")
         
         logger.info("Step 4: Loading database")
-        success = load_database(clean_data, db_path)
+        success = load_database(clean_data)
         if not success:
             raise RuntimeError("Failed to load database")
-        
+            
         logger.info("Pipeline completed successfully")
         return True
         

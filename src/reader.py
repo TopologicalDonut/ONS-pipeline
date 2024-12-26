@@ -11,7 +11,20 @@ There's four main things to get from the data:
     3. Item Description
     4. Item Index (ALL_GM_INDEX)
 """
-logger = setup_logger(__name__, logging.DEBUG)
+
+type SourceName = str
+type TargetName = str
+
+logger = setup_logger(__name__, logging.INFO)
+
+COL_MAPPINGS = {
+    'INDEX_DATE': 'date',
+    'ITEM_ID': 'item_id',
+    'ITEM_DESC': 'item_desc',
+    'ALL_GM_INDEX': 'item_index'
+}
+
+DATA_DIR = Path(__file__).parent.parent / 'data'
 
 def _read_file(filepath: Path) -> pl.DataFrame | None:
     """
@@ -32,10 +45,7 @@ def _read_file(filepath: Path) -> pl.DataFrame | None:
         logger.error(f"Error reading {filepath}: {e}", exc_info = True)
         return None
 
-def _standardize_columns(
-    df:pl.DataFrame, 
-    column_mapping: dict[str, str]
-) -> pl.DataFrame:
+def _standardize_columns(df:pl.DataFrame, column_mapping: dict[SourceName, TargetName]) -> pl.DataFrame:
     """
     Standardizes column names for given columns with case-insensitive matching. Also selects
     the needed columns.
@@ -64,18 +74,8 @@ def _standardize_columns(
     
     return standardized_cols
 
-def read_data(
-    column_mapping: dict[str, str],
-    data_folder: Path = Path('data')
-) -> pl.DataFrame:
-    """
-    Read and combine all data files with case-insensitive column matching (because the ONS data is inconsistent).
+def read_data(column_mapping: dict[SourceName, TargetName], data_folder: Path) -> pl.DataFrame:
 
-    Parameters
-    ----------
-    column_mapping
-        dict mapping source column names to target names.
-    """
     data_frames = []
     
     for filepath in data_folder.rglob('*'):
@@ -97,15 +97,8 @@ def read_data(
     return pl.concat(data_frames)
 
 def main() -> pl.DataFrame:
-
-    COL_MAPPINGS = {
-        'INDEX_DATE': 'date',
-        'ITEM_ID': 'item_id',
-        'ITEM_DESC': 'item_desc',
-        'ALL_GM_INDEX': 'item_index'
-    }
     
-    df = read_data(COL_MAPPINGS)
+    df = read_data(COL_MAPPINGS, DATA_DIR)
 
     logger.info(f"Read {df.height} rows from data")
     print(df.head(10))

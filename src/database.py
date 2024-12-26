@@ -3,12 +3,13 @@ import polars as pl
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-
 from src.logger import setup_logger
 
+type SQLType = str
 logger = setup_logger(__name__, logging.INFO)
 
-type SQLType = str
+DB_DIR = Path(__file__).parent.parent / 'database'
+DB_NAME = 'ons_cpi.db'
 
 @dataclass(frozen=True)
 class TableConfig:
@@ -21,31 +22,52 @@ class TableConfig:
 
 class DuckDBManager:
     def __init__(self, db_path: str, config: TableConfig, logger: logging.Logger):
-
+        # Configure database connection
         self.conn = duckdb.connect(db_path)
+        self.conn.execute("PRAGMA enable_checkpoint_on_shutdown")
+        self.conn.execute("PRAGMA wal_autocheckpoint = '2MB'")
         self.config = config
         self.logger = logger
-
-    def setup_schema(self) -> None:
-
+        
+    def setup_schema(self, force_recreate: bool = False) -> None:
+        """
+        Set up the database schema.
+        
+        Parameters
+        ----------
+        force_recreate : bool
+            If True, drops and recreates tables. If False, only creates if they don't exist.
+        """
         self.logger.info("Creating database schema")
         
-        entity_cols = [f'{self.config.id_column} VARCHAR PRIMARY KEY'] + [f'{name} {dtype}' for name, dtype in self.config.entity_columns.items()]
+        if force_recreate:
+            self.logger.warning("Force recreating tables - all existing data will be lost")
+            self.conn.execute(f"DROP TABLE IF EXISTS {self.config.data_table}")
+            self.conn.execute(f"DROP TABLE IF EXISTS {self.config.entity_table}")
+        
+        entity_cols = [
+            f'{self.config.id_column} VARCHAR PRIMARY KEY'
+        ] + [
+            f'{name} {dtype}' for name, dtype in self.config.entity_columns.items()
+        ]
+        
         self.conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {self.config.entity_table} (
                 {', '.join(entity_cols)}
             )
         """)
-
+        
         data_cols = [
             f'{self.config.date_column} DATE',
             f'{self.config.id_column} VARCHAR',
             *[f'{name} {dtype}' for name, dtype in self.config.measurement_columns.items()]
         ]
+        
         constraints = [
             f'PRIMARY KEY ({self.config.date_column}, {self.config.id_column})',
             f'FOREIGN KEY ({self.config.id_column}) REFERENCES {self.config.entity_table}({self.config.id_column})'
         ]
+        
         self.conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {self.config.data_table} (
                 {', '.join(data_cols)},
@@ -54,38 +76,85 @@ class DuckDBManager:
         """)
         
         self.logger.info(f"Created tables: {self.config.entity_table} and {self.config.data_table}")
-
-    def insert_data(self, df: pl.DataFrame) -> None:
-
+    
+    def insert_data(self, df: pl.DataFrame) -> tuple[int, int]:
+        """Insert data and return counts of inserted records."""
         self.logger.info("Starting data insertion")
-
+        
+        # Insert entities
         entity_cols = [self.config.id_column] + list(self.config.entity_columns.keys())
         entities_df = df.select(entity_cols).unique(subset=[self.config.id_column])
-
-        self.logger.debug(f"Inserting/updating {len(entities_df)} entities")
+        
+        entities_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.entity_table} SELECT * FROM entities_df")
-
+        entities_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
+        
+        # Insert measurements
         measurement_cols = [self.config.date_column, self.config.id_column] + list(self.config.measurement_columns.keys())
         measurements_df = df.select(measurement_cols).unique(subset=[self.config.id_column, self.config.date_column])
-
-        self.logger.debug(f"Inserting/updating {len(measurements_df)} measurements")
+        
+        measurements_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.data_table} SELECT * FROM measurements_df")
+        measurements_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
+        
+        self.logger.info(f"Inserted {entities_after - entities_before} new entities and {measurements_after - measurements_before} new measurements")
 
-        self.logger.info("Data insertion complete")
+        return None
+    
+    def preview_tables(self, limit: int = 5) -> tuple[pl.DataFrame, pl.DataFrame]:
+        """Preview both tables."""
+        entity_preview = self.conn.execute(
+            f"SELECT * FROM {self.config.entity_table} LIMIT {limit}"
+        ).pl()
+        
+        data_preview = self.conn.execute(
+            f"SELECT * FROM {self.config.data_table} LIMIT {limit}"
+        ).pl()
+        
+        return entity_preview, data_preview
 
+    def get_table_stats(self) -> dict:
+        """Get statistics about the tables."""
+        stats = {}
+        
+        # Get row counts
+        stats['entity_count'] = self.conn.execute(
+            f"SELECT COUNT(*) FROM {self.config.entity_table}"
+        ).fetchone()[0]
+        
+        stats['measurement_count'] = self.conn.execute(
+            f"SELECT COUNT(*) FROM {self.config.data_table}"
+        ).fetchone()[0]
+        
+        # Get date range
+        if stats['measurement_count'] > 0:
+            date_range = self.conn.execute(f"""
+                SELECT 
+                    MIN({self.config.date_column}) as min_date,
+                    MAX({self.config.date_column}) as max_date
+                FROM {self.config.data_table}
+            """).fetchone()
+            
+            stats['date_range'] = (date_range[0], date_range[1])
+        
+        return stats
+    
     def close(self) -> None:
-
+        """Close the database connection. 
+        With enable_checkpoint_on_shutdown, a CHECKPOINT will be run automatically
+        and the WAL will be merged and deleted."""
         self.conn.close()
+
 
 def main(
     input_df: pl.DataFrame,
-    db_path_str: str = 'ons_cpi.db'
+    db_dir: Path = DB_DIR,
+    db_name: str = DB_NAME
 ) -> bool:
-
     try:
-        db_path = Path(db_path_str)
-        db_path.parent.mkdir(parents = True, exist_ok = True)
-
+        db_path = db_dir / db_name
+        db_dir.mkdir(parents=True, exist_ok=True)
+        
         config = TableConfig(
             id_column="item_id",
             date_column="date",
@@ -95,7 +164,26 @@ def main(
         
         db_manager = DuckDBManager(str(db_path), config, logger)
         db_manager.setup_schema()
+        
         db_manager.insert_data(input_df)
+        
+        # Print table previews and stats
+        entity_preview, data_preview = db_manager.preview_tables()
+        stats = db_manager.get_table_stats()
+        
+        logger.info("Table Previews:")
+        logger.info("\nEntities Table:")
+        logger.info(entity_preview)
+        logger.info("\nMeasurements Table:")
+        logger.info(data_preview)
+        
+        logger.info("\nDatabase Statistics:")
+        logger.info(f"Total entities: {stats['entity_count']}")
+        logger.info(f"Total measurements: {stats['measurement_count']}")
+        if 'date_range' in stats:
+            logger.info(f"Date range: {stats['date_range'][0]} to {stats['date_range'][1]}")
+        
+        db_manager.close()
         logger.info(f"Successfully loaded data into {db_path}")
         return True
         

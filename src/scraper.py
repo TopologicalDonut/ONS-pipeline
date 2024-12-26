@@ -1,60 +1,75 @@
 import requests
+from requests.exceptions import RequestException
 from bs4 import BeautifulSoup
 from pathlib import Path
 import zipfile
 import time
+import random
 from tqdm import tqdm
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
 
 from src.logger import setup_logger
 
-'''
-We want to scrape the ONS page for CPI data. Use requests to open the page, then use BeautifulSoup to parse the HTML.
-'''
-
 logger = setup_logger(__name__, logging.INFO)
 
-@dataclass
+BASE_URL = 'https://www.ons.gov.uk'
+TARGET_URL = f'{BASE_URL}/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes'
+FILE_TYPES = [".csv", ".xlsx", ".zip",]
+SEARCH_TERMS = ["upload-itemindices", "/itemindices"]
+
+DATA_DIR = Path(__file__).parent.parent / 'data'
+
 class RateLimiter:
-    requests_per_second: float
-    last_request: datetime = datetime.now()
+    def __init__(self, requests_per_period: int, period_seconds: int):
+
+        self.delay = period_seconds / requests_per_period
+        self.last_request_time = 0
 
     def wait(self):
 
-        now = datetime.now()
-        elapsed = now - self.last_request
-        required_gap = timedelta(seconds = 1 // self.requests_per_second)
+        now = time.time()
+        time_since_last_request = now - self.last_request_time
 
-        if elapsed < required_gap:
-            time.sleep((required_gap - elapsed.total_seconds()))
-        self.last_request = datetime.now()
+        if time_since_last_request < self.delay:
+            time.sleep(self.delay - time_since_last_request)
+
+        self.last_request_time = time.time()
 
 class WebScraper:
-    def __init__(self, BASE_URL: str, rate_limit: float, logger: logging.Logger):
+    def __init__(self, BASE_URL: str, requests_per_period: int, period_seconds: int, logger: logging.Logger):
 
         self.BASE_URL = BASE_URL
         self.session = requests.Session()
-        self.rate_limiter = RateLimiter(rate_limit)
-        self.logger = logger
-        self.logger.info(f"Initializing WebScraper with base URL: {BASE_URL}, rate limit: {rate_limit} req/s")   
+        self.rate_limiter = RateLimiter(requests_per_period, period_seconds)
+        self.logger = logger   
+
+    def _make_request(self, url: str, max_retries: int = 5) -> requests.Response | None:
+        backoff_time = 1
+        for attempt in range(max_retries):
+            self.rate_limiter.wait()
+            try:
+                response = self.session.get(url)
+                response.raise_for_status()
+                return response
+            except RequestException as e:
+                if response.status_code == 429:
+                    self.logger.warning(f"Rate limit exceeded. Backing off for {backoff_time} seconds before retrying.")
+                    time.sleep(backoff_time)
+                    backoff_time *= 2  # exponential backoff
+                else:
+                    self.logger.warning(f"Error accessing {url}: {str(e)}. Attempt {attempt + 1} of {max_retries}")
+                    if attempt == max_retries - 1:
+                        self.logger.error(f"Failed to access {url} after {max_retries} attempts.")
+                        return None
+        return None
 
     def get_web_data(self, url: str) -> str | None:
 
-        self.logger.debug(f"Fetching data from {url}")
+        response = self._make_request(url)
 
-        try:
-            response = self.session.get(url)
-            response.raise_for_status()
-            self.logger.debug(f"Successfully fetched data from {url}")
-
-            return response.text
-        
-        except requests.RequestException as e:
-            self.logger.error(f"Error fetching {url}: {str(e)}")
-
-            return None
+        return response.text if response else None
 
     def get_data_links(self, html: str, FILE_TYPES: list[str], search_term: list[str]) -> list[str]:
         """
@@ -79,22 +94,13 @@ class WebScraper:
     
     def download_file(self, url: str, path: Path) -> bool:
 
-        self.logger.debug(f"Downloading file from {url} to {path}")
-        self.rate_limiter.wait()
+        response = self._make_request(url)
 
-        try:
-            response = self.session.get(url)
-            response.raise_for_status()
+        if response:
             path.write_bytes(response.content)
-
-            self.logger.debug(f"Successfully downloaded file to {path}")
-
             return True
         
-        except requests.RequestException as e:
-            self.logger.error(f"Error downloading {url}: {str(e)}")
-
-            return False
+        return False
         
     def process_files(self, data_links: list[str], download_dir: Path) -> None:
 
@@ -154,16 +160,11 @@ class WebScraper:
 
 def main():
 
-    BASE_URL = 'https://www.ons.gov.uk'
-    TARGET_URL = f'{BASE_URL}/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes'
-    FILE_TYPES = [".csv", ".xlsx", ".zip",]
-    SEARCH_TERMS = ["upload-itemindices", "/itemindices"]
-
-    scraper = WebScraper(BASE_URL, rate_limit = 1.5, logger = logger)
+    scraper = WebScraper(BASE_URL, requests_per_period = 5, period_seconds = 10, logger = logger)
     
     if html := scraper.get_web_data(TARGET_URL):
         data_links = scraper.get_data_links(html, FILE_TYPES, SEARCH_TERMS)
-        scraper.process_files(data_links, Path('data'))
+        scraper.process_files(data_links, DATA_DIR)
 
 if __name__ == "__main__":
     main()

@@ -126,3 +126,9 @@ dmypy.json
 data/validation_problems/
 
 .DS_Store
+
+data/extracted_files/
+
+data/
+
+database/
