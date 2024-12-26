@@ -73,12 +73,10 @@ class ValidationResults:
 
         if self.problem_rows and output_path != None:
 
-            timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') # Windows is dumb, can't use : for timestamp
             output_file = output_path / f"validation_problems_{timestamp}.json"
 
             logger.info(f"Saving validation problems to {output_file}")
-
-            serializable_rows = []
 
             with open(output_file, 'w') as f:
                 json.dump(self.problem_rows, f, indent = 2)

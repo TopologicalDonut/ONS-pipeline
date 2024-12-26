@@ -132,3 +132,5 @@ data/extracted_files/
 data/
 
 database/
+
+logs/

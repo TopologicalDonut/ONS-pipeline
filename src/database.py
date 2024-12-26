@@ -19,16 +19,32 @@ class TableConfig:
     measurement_columns: dict[str, SQLType]
     entity_table: str = "items"
     data_table: str = "cpi_data"
+    float_tolerance: float = 1e-3 
+
+    def get_comparison(self, col: str, dtype: str, table1: str, table2: str) -> str:
+        """Get appropriate comparison for column type"""
+
+        if dtype.upper().startswith('FLOAT'):
+
+            return f"ABS({table1}.{col} - {table2}.{col}) > {self.float_tolerance}"
+        
+        return f"{table1}.{col} != {table2}.{col}"
 
 class DuckDBManager:
     def __init__(self, db_path: str, config: TableConfig, logger: logging.Logger):
         # Configure database connection
         self.conn = duckdb.connect(db_path)
-        self.conn.execute("PRAGMA enable_checkpoint_on_shutdown")
-        self.conn.execute("PRAGMA wal_autocheckpoint = '2MB'")
         self.config = config
         self.logger = logger
         
+        # Check which tables exist before creation
+        tables_before = set(self.conn.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_name IN (?, ?)
+        """, [self.config.entity_table, self.config.data_table]).fetchall())
+        tables_before = {t[0] for t in tables_before}
+
     def setup_schema(self, force_recreate: bool = False) -> None:
         """
         Set up the database schema.
@@ -38,8 +54,18 @@ class DuckDBManager:
         force_recreate : bool
             If True, drops and recreates tables. If False, only creates if they don't exist.
         """
+
         self.logger.info("Creating database schema")
         
+        # Check which tables exist before creation
+        tables_before = set(self.conn.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_name IN (?, ?)
+        """, [self.config.entity_table, self.config.data_table]).fetchall())
+
+        tables_before = {t[0] for t in tables_before}       
+
         if force_recreate:
             self.logger.warning("Force recreating tables - all existing data will be lost")
             self.conn.execute(f"DROP TABLE IF EXISTS {self.config.data_table}")
@@ -75,16 +101,41 @@ class DuckDBManager:
             )
         """)
         
-        self.logger.info(f"Created tables: {self.config.entity_table} and {self.config.data_table}")
+        # Check which tables exist after creation
+        tables_after = set(self.conn.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_name IN (?, ?)
+        """, [self.config.entity_table, self.config.data_table]).fetchall())
+        
+        tables_after = {t[0] for t in tables_after}
+        
+        # Log what happened
+        new_tables = tables_after - tables_before
+        if new_tables:
+            self.logger.info(f"Created new tables: {', '.join(new_tables)}")
+        else:
+            self.logger.info("No new tables created - all tables already exist")
     
     def insert_data(self, df: pl.DataFrame) -> tuple[int, int]:
-        """Insert data and return counts of inserted records."""
+        """Insert data and return counts of inserted/updated records."""
+
         self.logger.info("Starting data insertion")
         
         # Insert entities
         entity_cols = [self.config.id_column] + list(self.config.entity_columns.keys())
         entities_df = df.select(entity_cols).unique(subset=[self.config.id_column])
         
+        value_comparisons = [
+            self.config.get_comparison(col, dtype, 'e', 'n') for col, dtype in self.config.entity_columns.items()
+        ]
+
+        replaced_entities = self.conn.execute(f"""
+            SELECT COUNT(*) FROM {self.config.entity_table} e
+            INNER JOIN entities_df n ON e.{self.config.id_column} = n.{self.config.id_column}
+            WHERE { ' OR '.join(value_comparisons) }
+        """).fetchone()[0]
+
         entities_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.entity_table} SELECT * FROM entities_df")
         entities_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
@@ -93,11 +144,26 @@ class DuckDBManager:
         measurement_cols = [self.config.date_column, self.config.id_column] + list(self.config.measurement_columns.keys())
         measurements_df = df.select(measurement_cols).unique(subset=[self.config.id_column, self.config.date_column])
         
+        value_comparisons = [
+            self.config.get_comparison(col, dtype, 'd', 'n') for col, dtype in self.config.measurement_columns.items()
+        ]
+
+        replaced_measurements = self.conn.execute(f"""
+            SELECT COUNT(*) FROM {self.config.data_table} d
+            INNER JOIN measurements_df n 
+            ON d.{self.config.date_column} = n.{self.config.date_column}
+            AND d.{self.config.id_column} = n.{self.config.id_column}
+            WHERE {' OR '.join(value_comparisons)}
+        """).fetchone()[0]
+
         measurements_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.data_table} SELECT * FROM measurements_df")
         measurements_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
         
-        self.logger.info(f"Inserted {entities_after - entities_before} new entities and {measurements_after - measurements_before} new measurements")
+        self.logger.info(
+            f"Processed: {entities_after - entities_before} new entities ({replaced_entities} updated), "
+            f"{measurements_after - measurements_before} new measurements ({replaced_measurements} updated)"
+        )
 
         return None
     
@@ -115,6 +181,7 @@ class DuckDBManager:
 
     def get_table_stats(self) -> dict:
         """Get statistics about the tables."""
+
         stats = {}
         
         # Get row counts
@@ -140,17 +207,12 @@ class DuckDBManager:
         return stats
     
     def close(self) -> None:
-        """Close the database connection. 
-        With enable_checkpoint_on_shutdown, a CHECKPOINT will be run automatically
-        and the WAL will be merged and deleted."""
+
         self.conn.close()
 
 
-def main(
-    input_df: pl.DataFrame,
-    db_dir: Path = DB_DIR,
-    db_name: str = DB_NAME
-) -> bool:
+def main(input_df: pl.DataFrame, db_dir: Path = DB_DIR, db_name: str = DB_NAME) -> bool:
+
     try:
         db_path = db_dir / db_name
         db_dir.mkdir(parents=True, exist_ok=True)

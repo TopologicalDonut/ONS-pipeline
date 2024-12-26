@@ -1,11 +1,7 @@
 import logging
 from pathlib import Path
 
-def setup_logger(
-    name: str,
-    level: int, 
-    log_dir: Path = Path('logs'),
-    add_file_handler: bool = False
+def setup_logger(name: str, level: int, log_dir: Path = Path('logs'), add_file_handler: bool = False
 ) -> logging.Logger:
     """
     Parameters
@@ -23,6 +19,7 @@ def setup_logger(
     logger = logging.getLogger(name)
 
     if not logger.handlers:
+
         logger.setLevel(level)
         
         formatter = logging.Formatter(
@@ -35,7 +32,9 @@ def setup_logger(
         logger.addHandler(console_handler)
         
         if add_file_handler:
-            log_dir
+
+            log_dir.mkdir(parents = True, exist_ok = True)
+
             file_handler = logging.FileHandler(
                 log_dir / f'{name}'
             )
