@@ -67,7 +67,7 @@ ONS_VALIDATION_CONFIG = ValidationConfig(
             "Empty description after trimming")
         ],
         'item_index': [
-            (lambda col: col.is_not_null() & (col >= 0), 
+            (lambda col: col.is_not_null() & (col > 0), 
             "Invalid index value")
         ]
     },
