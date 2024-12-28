@@ -3,12 +3,13 @@ import polars as pl
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from src.logger import setup_logger
+
+from src.const import PATH_CONFIG
+
+logger = logging.getLogger(__name__)
 
 type SQLType = str
-logger = setup_logger(__name__, logging.INFO)
 
-DB_DIR = Path(__file__).parent.parent / 'database'
 DB_NAME = 'ons_cpi.db'
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class TableConfig:
     float_tolerance: float = 1e-3 
 
     def get_comparison(self, col: str, dtype: str, table1: str, table2: str) -> str:
-        """Get appropriate comparison for column type"""
+        """This is to compare whether values of two tables are equal or not with a tolerance for floats"""
 
         if dtype.upper().startswith('FLOAT'):
 
@@ -30,9 +31,16 @@ class TableConfig:
         
         return f"{table1}.{col} != {table2}.{col}"
 
+TABLE_CONFIG = TableConfig(
+    id_column = "item_id",
+    date_column = "date",
+    entity_columns = {"item_desc": "VARCHAR"},
+    measurement_columns = {"item_index": "FLOAT"}
+)
+
 class DuckDBManager:
     def __init__(self, db_path: str, config: TableConfig, logger: logging.Logger):
-        # Configure database connection
+
         self.conn = duckdb.connect(db_path)
         self.config = config
         self.logger = logger
@@ -43,6 +51,7 @@ class DuckDBManager:
             FROM information_schema.tables 
             WHERE table_name IN (?, ?)
         """, [self.config.entity_table, self.config.data_table]).fetchall())
+
         tables_before = {t[0] for t in tables_before}
 
     def setup_schema(self, force_recreate: bool = False) -> None:
@@ -110,7 +119,6 @@ class DuckDBManager:
         
         tables_after = {t[0] for t in tables_after}
         
-        # Log what happened
         new_tables = tables_after - tables_before
         if new_tables:
             self.logger.info(f"Created new tables: {', '.join(new_tables)}")
@@ -211,25 +219,17 @@ class DuckDBManager:
         self.conn.close()
 
 
-def main(input_df: pl.DataFrame, db_dir: Path = DB_DIR, db_name: str = DB_NAME) -> bool:
+def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str = DB_NAME) -> bool:
 
     try:
         db_path = db_dir / db_name
         db_dir.mkdir(parents=True, exist_ok=True)
         
-        config = TableConfig(
-            id_column="item_id",
-            date_column="date",
-            entity_columns={"item_desc": "VARCHAR"},
-            measurement_columns={"item_index": "FLOAT"}
-        )
-        
-        db_manager = DuckDBManager(str(db_path), config, logger)
+        db_manager = DuckDBManager(str(db_path), TABLE_CONFIG, logger)
         db_manager.setup_schema()
         
         db_manager.insert_data(input_df)
         
-        # Print table previews and stats
         entity_preview, data_preview = db_manager.preview_tables()
         stats = db_manager.get_table_stats()
         

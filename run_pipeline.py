@@ -1,14 +1,26 @@
 import logging
 
-from src.logger import setup_logger
+from src.const import PATH_CONFIG
 from src.scraper import main as scrape_data
 from src.reader import main as read_data
 from src.processor import main as process_data
 from src.database import main as load_database
 
-logger = setup_logger(__name__, logging.INFO)
-
 def run_pipeline() -> bool:
+
+    PATH_CONFIG.LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(PATH_CONFIG.LOG_DIR / 'ons_cpi.log')
+        ]
+    )
+
+    logger = logging.getLogger(__name__)
+
     try:
         logger.info("Starting pipeline")
         

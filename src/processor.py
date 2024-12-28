@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Any
 from datetime import datetime
 import polars as pl
 from pathlib import Path
 import json 
 import logging
 
-from src.logger import setup_logger
+from src.const import PATH_CONFIG
 
 """
 This script is for processing ONS data so that it's ready for database storage.
@@ -21,13 +21,10 @@ To validate the data, should ensure:
 The implementation has some dataclasses defined to make it easy to create and use validation rules and keep track of any problematic data.
 """
 
+logger = logging.getLogger(__name__)
+
 type ValidationFunction = Callable[[pl.Expr], pl.Expr]
 type ValidationRule = list[tuple[ValidationFunction, str]]
-
-logger = setup_logger(__name__, logging.INFO)
-
-DATA_DIR = Path(__file__).parent.parent / 'data'
-VALIDATION_DIR = DATA_DIR / 'validation_problems'
 
 @dataclass(frozen = True)
 class ValidationConfig:
@@ -49,13 +46,41 @@ class ValidationConfig:
     columns: dict[str, ValidationRule]
     duplicate_check_columns: list[str]
 
+ONS_VALIDATION_CONFIG = ValidationConfig(
+    columns={
+        'date': [
+            (lambda col: col.is_not_null(),
+            "Missing date"),
+            (lambda col: (col >= 100000) & (col <= 999999), 
+            "Invalid date format"),
+            (lambda col: (col % 100 <= 12) & (col % 100 > 0), 
+            "Invalid month")
+        ],
+        'item_id': [
+            (lambda col: col.is_not_null(),
+            "Missing item ID")
+        ],
+        'item_desc': [
+            (lambda col: col.is_not_null(), 
+            "Missing or Empty description"),
+            (lambda col: col.str.strip_chars().str.len_chars() > 0,
+            "Empty description after trimming")
+        ],
+        'item_index': [
+            (lambda col: col.is_not_null() & (col >= 0), 
+            "Invalid index value")
+        ]
+    },
+    duplicate_check_columns=['date', 'item_id']
+)
+
 @dataclass
 class ValidationResults:
 
     total_rows: int = 0
     invalid_rows: dict[str, int] = field(default_factory = dict)
     rows_retained: int = 0
-    problem_rows: list[dict] = field(default_factory = list)
+    problem_rows: list[dict[str, Any]] = field(default_factory = list)
 
     def add_problem(self, rows: pl.DataFrame, reason: str) -> None:
 
@@ -94,7 +119,7 @@ class ValidationResults:
 def process_data(
     df: pl.DataFrame,
     config: ValidationConfig,
-    problems_path: Path | None = VALIDATION_DIR
+    problems_path: Path | None = PATH_CONFIG.VALIDATION_DIR
 ) -> tuple[pl.DataFrame, ValidationResults]:
     """
     Parameters
@@ -154,38 +179,10 @@ def process_data(
 
 def main(input_df: pl.DataFrame) -> pl.DataFrame:
 
-    ons_validations = ValidationConfig(
-        columns={
-            'date': [
-                (lambda col: col.is_not_null(),
-                "Missing date"),
-                (lambda col: (col >= 100000) & (col <= 999999), 
-                "Invalid date format"),
-                (lambda col: (col % 100 <= 12) & (col % 100 > 0), 
-                "Invalid month")
-            ],
-            'item_id': [
-                (lambda col: col.is_not_null(),
-                "Missing item ID")
-            ],
-            'item_desc': [
-                (lambda col: col.is_not_null(), 
-                "Missing or Empty description"),
-                (lambda col: col.str.strip_chars().str.len_chars() > 0,
-                "Empty description after trimming")
-            ],
-            'item_index': [
-                (lambda col: col.is_not_null() & (col >= 0), 
-                "Invalid index value")
-            ]
-        },
-        duplicate_check_columns=['date', 'item_id']
-    )
-
     try:
         clean_data, validation_val_results = process_data(
             input_df, 
-            ons_validations
+            ONS_VALIDATION_CONFIG
         )
 
         validation_val_results.print_summary()

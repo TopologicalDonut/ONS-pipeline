@@ -1,7 +1,8 @@
 from pathlib import Path
 import polars as pl
 import logging
-from src.logger import setup_logger
+
+from src.const import PATH_CONFIG
 
 """
 This script is for reading all the ONS data from the target directory of the scraper.
@@ -12,10 +13,10 @@ There's four main things to get from the data:
     4. Item Index (ALL_GM_INDEX)
 """
 
+logger = logging.getLogger(__name__)
+
 type SourceName = str
 type TargetName = str
-
-logger = setup_logger(__name__, logging.INFO)
 
 COL_MAPPINGS = {
     'INDEX_DATE': 'date',
@@ -23,8 +24,6 @@ COL_MAPPINGS = {
     'ITEM_DESC': 'item_desc',
     'ALL_GM_INDEX': 'item_index'
 }
-
-DATA_DIR = Path(__file__).parent.parent / 'data'
 
 def _read_file(filepath: Path) -> pl.DataFrame | None:
     """
@@ -98,7 +97,7 @@ def read_data(column_mapping: dict[SourceName, TargetName], data_folder: Path) -
 
 def main() -> pl.DataFrame:
     
-    df = read_data(COL_MAPPINGS, DATA_DIR)
+    df = read_data(COL_MAPPINGS, PATH_CONFIG.DATA_DIR)
 
     logger.info(f"Read {df.height} rows from data")
     print(df.head(10))

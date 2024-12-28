@@ -4,22 +4,24 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 import zipfile
 import time
-import random
 from tqdm import tqdm
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import logging
+from dataclasses import dataclass, field
 
-from src.logger import setup_logger
+from src.const import PATH_CONFIG
 
-logger = setup_logger(__name__, logging.INFO)
+logger = logging.getLogger(__name__)
 
-BASE_URL = 'https://www.ons.gov.uk'
-TARGET_URL = f'{BASE_URL}/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes'
-FILE_TYPES = [".csv", ".xlsx", ".zip",]
-SEARCH_TERMS = ["upload-itemindices", "/itemindices"]
+@dataclass(frozen = True)
+class WebConfig:
+    BASE_URL: str = 'https://www.ons.gov.uk'
+    TARGET_URL: str = f'{BASE_URL}/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes'
+    FILE_TYPES: list[str] = field(default_factory = lambda: [".csv", ".xlsx", ".zip",])
+    SEARCH_TERMS: list[str] = field(default_factory = lambda: ["upload-itemindices", "/itemindices"])
+    REQUESTS_PER_PERIOD:int = 5
+    PERIOD_SECONDS: int = 10
 
-DATA_DIR = Path(__file__).parent.parent / 'data'
+WEB_CONFIG = WebConfig()
 
 class RateLimiter:
     def __init__(self, requests_per_period: int, period_seconds: int):
@@ -38,15 +40,17 @@ class RateLimiter:
         self.last_request_time = time.time()
 
 class WebScraper:
-    def __init__(self, BASE_URL: str, requests_per_period: int, period_seconds: int, logger: logging.Logger):
+    def __init__(self, BASE_URL: str, TARGET_URL: str, requests_per_period: int, period_seconds: int):
 
         self.BASE_URL = BASE_URL
+        self.TARGET_URL = TARGET_URL
         self.session = requests.Session()
         self.rate_limiter = RateLimiter(requests_per_period, period_seconds)
-        self.logger = logger   
 
-    def _make_request(self, url: str, max_retries: int = 5) -> requests.Response | None:
+    def _make_request(self, url, max_retries: int = 5) -> requests.Response | None:
+
         backoff_time = 1
+
         for attempt in range(max_retries):
             self.rate_limiter.wait()
             try:
@@ -55,23 +59,23 @@ class WebScraper:
                 return response
             except RequestException as e:
                 if response.status_code == 429:
-                    self.logger.warning(f"Rate limit exceeded. Backing off for {backoff_time} seconds before retrying.")
+                    logger.warning(f"Rate limit exceeded. Backing off for {backoff_time} seconds before retrying.")
                     time.sleep(backoff_time)
                     backoff_time *= 2  # exponential backoff
                 else:
-                    self.logger.warning(f"Error accessing {url}: {str(e)}. Attempt {attempt + 1} of {max_retries}")
+                    logger.warning(f"Error accessing {url}: {str(e)}. Attempt {attempt + 1} of {max_retries}")
                     if attempt == max_retries - 1:
-                        self.logger.error(f"Failed to access {url} after {max_retries} attempts.")
+                        logger.error(f"Failed to access {url} after {max_retries} attempts.")
                         return None
         return None
 
-    def get_web_data(self, url: str) -> str | None:
+    def get_web_data(self) -> str | None:
 
-        response = self._make_request(url)
+        response = self._make_request(self.TARGET_URL)
 
         return response.text if response else None
 
-    def get_data_links(self, html: str, FILE_TYPES: list[str], search_term: list[str]) -> list[str]:
+    def get_data_links(self, html: str, file_types: list[str], search_term: list[str]) -> list[str]:
         """
         Get data links from the HTML content.
 
@@ -84,15 +88,15 @@ class WebScraper:
         links = [
             link.get('href') for link in soup.find_all('a')
             if link.get('href') and any(term in link.get('href') for term in search_term)
-            and link.get('href').endswith(tuple(FILE_TYPES))
+            and link.get('href').endswith(tuple(file_types))
         ]
         
-        self.logger.info(f"Found {len(links)} matching data links")
-        self.logger.debug(f"Data links: {links}")
+        logger.info(f"Found {len(links)} matching data links")
+        logger.debug(f"Data links: {links}")
 
         return links
     
-    def download_file(self, url: str, path: Path) -> bool:
+    def download_file(self, url, path: Path) -> bool:
 
         response = self._make_request(url)
 
@@ -102,9 +106,9 @@ class WebScraper:
         
         return False
         
-    def process_files(self, data_links: list[str], download_dir: Path) -> None:
+    def process_files(self, data_links: list[str], download_dir: Path = PATH_CONFIG.DATA_DIR) -> None:
 
-        self.logger.info(f"Starting to process {len(data_links)} files")
+        logger.info(f"Starting to process {len(data_links)} files")
 
         download_dir.mkdir(parents = True, exist_ok = True)
         extract_dir = download_dir / 'extracted_files'
@@ -126,12 +130,12 @@ class WebScraper:
 
             if filename.endswith('.zip'):
                 if filename in processed:
-                    self.logger.debug(f"Skipping already processed zip: {filename}")
+                    logger.debug(f"Skipping already processed zip: {filename}")
                     stats['zips_skipped'] += 1
                     continue
 
                 if self.download_file(self.BASE_URL + link, file_path):
-                    self.logger.info(f"Extracting zip file: {filename}")
+                    logger.info(f"Extracting zip file: {filename}")
 
                     with zipfile.ZipFile(file_path) as zf:
                         zf.extractall(extract_dir)
@@ -143,14 +147,14 @@ class WebScraper:
                     stats['zips_processed'] += 1
             else:
                 if file_path.exists():
-                    self.logger.debug(f"Skipping existing file: {filename}")
+                    logger.debug(f"Skipping existing file: {filename}")
                     stats['files_skipped'] += 1
                     continue
                 
                 if self.download_file(self.BASE_URL + link, file_path):
                     stats['files_downloaded'] += 1
                 
-        self.logger.info(
+        logger.info(
             f"Processing complete -- "
             f"Processed: {stats['zips_processed']} zips, {stats['files_downloaded']} files. "
             f"Skipped: {stats['zips_skipped']} zips, {stats['files_skipped']} files."
@@ -160,11 +164,11 @@ class WebScraper:
 
 def main():
 
-    scraper = WebScraper(BASE_URL, requests_per_period = 5, period_seconds = 10, logger = logger)
+    ONS_scraper = WebScraper(WEB_CONFIG.BASE_URL, WEB_CONFIG.TARGET_URL, WEB_CONFIG.PERIOD_SECONDS, WEB_CONFIG.REQUESTS_PER_PERIOD)
     
-    if html := scraper.get_web_data(TARGET_URL):
-        data_links = scraper.get_data_links(html, FILE_TYPES, SEARCH_TERMS)
-        scraper.process_files(data_links, DATA_DIR)
+    if html := ONS_scraper.get_web_data():
+        data_links = ONS_scraper.get_data_links(html, WEB_CONFIG.FILE_TYPES, WEB_CONFIG.SEARCH_TERMS)
+        ONS_scraper.process_files(data_links)
 
 if __name__ == "__main__":
     main()
