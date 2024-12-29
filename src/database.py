@@ -39,11 +39,10 @@ TABLE_CONFIG = TableConfig(
 )
 
 class DuckDBManager:
-    def __init__(self, db_path: str, config: TableConfig, logger: logging.Logger):
+    def __init__(self, db_path: str, config: TableConfig):
 
         self.conn = duckdb.connect(db_path)
         self.config = config
-        self.logger = logger
         
         # Check which tables exist before creation
         tables_before = set(self.conn.execute("""
@@ -64,7 +63,7 @@ class DuckDBManager:
             If True, drops and recreates tables. If False, only creates if they don't exist.
         """
 
-        self.logger.info("Creating database schema")
+        logger.info("Creating database schema")
         
         # Check which tables exist before creation
         tables_before = set(self.conn.execute("""
@@ -76,7 +75,7 @@ class DuckDBManager:
         tables_before = {t[0] for t in tables_before}       
 
         if force_recreate:
-            self.logger.warning("Force recreating tables - all existing data will be lost")
+            logger.warning("Force recreating tables - all existing data will be lost")
             self.conn.execute(f"DROP TABLE IF EXISTS {self.config.data_table}")
             self.conn.execute(f"DROP TABLE IF EXISTS {self.config.entity_table}")
         
@@ -121,14 +120,14 @@ class DuckDBManager:
         
         new_tables = tables_after - tables_before
         if new_tables:
-            self.logger.info(f"Created new tables: {', '.join(new_tables)}")
+            logger.info(f"Created new tables: {', '.join(new_tables)}")
         else:
-            self.logger.info("No new tables created - all tables already exist")
+            logger.info("No new tables created - all tables already exist")
     
     def insert_data(self, df: pl.DataFrame) -> tuple[int, int]:
         """Insert data and return counts of inserted/updated records."""
 
-        self.logger.info("Starting data insertion")
+        logger.info("Starting data insertion")
         
         # Insert entities
         entity_cols = [self.config.id_column] + list(self.config.entity_columns.keys())
@@ -168,7 +167,7 @@ class DuckDBManager:
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.data_table} SELECT * FROM measurements_df")
         measurements_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
         
-        self.logger.info(
+        logger.info(
             f"Processed: {entities_after - entities_before} new entities ({replaced_entities} updated), "
             f"{measurements_after - measurements_before} new measurements ({replaced_measurements} updated)"
         )
@@ -225,7 +224,7 @@ def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str
         db_path = db_dir / db_name
         db_dir.mkdir(parents=True, exist_ok=True)
         
-        db_manager = DuckDBManager(str(db_path), TABLE_CONFIG, logger)
+        db_manager = DuckDBManager(str(db_path), TABLE_CONFIG)
         db_manager.setup_schema()
         
         db_manager.insert_data(input_df)

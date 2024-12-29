@@ -27,7 +27,7 @@ def sample_data():
 @pytest.fixture
 def db_manager(table_config):
     logger = logging.getLogger("test_logger")
-    manager = DuckDBManager(":memory:", table_config, logger)
+    manager = DuckDBManager(":memory:", table_config)
     manager.setup_schema()
     yield manager
     manager.close()
