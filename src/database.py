@@ -124,8 +124,7 @@ class DuckDBManager:
         else:
             logger.info("No new tables created - all tables already exist")
     
-    def insert_data(self, df: pl.DataFrame) -> tuple[int, int]:
-        """Insert data and return counts of inserted/updated records."""
+    def insert_data(self, df: pl.DataFrame) -> None:
 
         logger.info("Starting data insertion")
         
@@ -141,11 +140,11 @@ class DuckDBManager:
             SELECT COUNT(*) FROM {self.config.entity_table} e
             INNER JOIN entities_df n ON e.{self.config.id_column} = n.{self.config.id_column}
             WHERE { ' OR '.join(value_comparisons) }
-        """).fetchone()[0]
+        """).fetchall()[0][0]
 
-        entities_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
+        entities_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchall()[0][0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.entity_table} SELECT * FROM entities_df")
-        entities_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchone()[0]
+        entities_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.entity_table}").fetchall()[0][0]
         
         # Insert measurements
         measurement_cols = [self.config.date_column, self.config.id_column] + list(self.config.measurement_columns.keys())
@@ -161,11 +160,11 @@ class DuckDBManager:
             ON d.{self.config.date_column} = n.{self.config.date_column}
             AND d.{self.config.id_column} = n.{self.config.id_column}
             WHERE {' OR '.join(value_comparisons)}
-        """).fetchone()[0]
+        """).fetchall()[0][0]
 
-        measurements_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
+        measurements_before = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchall()[0][0]
         self.conn.execute(f"INSERT OR REPLACE INTO {self.config.data_table} SELECT * FROM measurements_df")
-        measurements_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchone()[0]
+        measurements_after = self.conn.execute(f"SELECT COUNT(*) FROM {self.config.data_table}").fetchall()[0][0]
         
         logger.info(
             f"Processed: {entities_after - entities_before} new entities ({replaced_entities} updated), "
@@ -194,11 +193,11 @@ class DuckDBManager:
         # Get row counts
         stats['entity_count'] = self.conn.execute(
             f"SELECT COUNT(*) FROM {self.config.entity_table}"
-        ).fetchone()[0]
+        ).fetchall()[0][0]
         
         stats['measurement_count'] = self.conn.execute(
             f"SELECT COUNT(*) FROM {self.config.data_table}"
-        ).fetchone()[0]
+        ).fetchall()[0][0]
         
         # Get date range
         if stats['measurement_count'] > 0:
@@ -207,9 +206,9 @@ class DuckDBManager:
                     MIN({self.config.date_column}) as min_date,
                     MAX({self.config.date_column}) as max_date
                 FROM {self.config.data_table}
-            """).fetchone()
+            """).fetchall()[0]
             
-            stats['date_range'] = (date_range[0], date_range[1])
+            stats['date_range'] = date_range
         
         return stats
     
@@ -251,6 +250,3 @@ def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str
     except Exception as e:
         logger.error(f"Failed to load database: {e}", exc_info=True)
         return False
-
-if __name__ == "__main__":
-    main()
