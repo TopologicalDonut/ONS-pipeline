@@ -9,24 +9,22 @@ This pipeline:
 2. Processes and validates the data
 3. Loads it into a DuckDB database for analysis
 
-## Features
+## Setup and Usage
 
-- **Smart Web Scraping**: 
-  - Rate-limited requests with automatic backoff
-  - Handles both current and historical data files
-  - Deduplicates data across yearly archives and individual files
-  - Supports CSV, XLSX, and ZIP formats
+Currently only an `environment.yml` is available for conda users. A `requirements.txt` will be made soon for pip + virtualenv.
 
-- **Robust Data Processing**:
-  - Validates dates, item IDs, descriptions, and index values
-  - Handles missing values and duplicates
-  - Saves validation issues for review
-  - Uses Polars for efficient data manipulation
+1. Create and activate the conda environment:
+   ```bash
+   conda env create -f environment.yml
+   conda activate ons-cpi
+   ```
 
-- **Database Storage**:
-  - Uses DuckDB for local analytics
-  - Implements tables for items and their corresponding price indices
-  - Handles data updates with duplicate detection
+2. Run the pipeline:
+   ```bash
+   python -m src.run_pipeline
+   ```
+
+When the pipeline runs, it creates necessary directories for data storage, database files, and logs.
 
 ## Project Structure
 
@@ -49,7 +47,24 @@ This pipeline:
    └─ test_ONS_validation.py
 ```
 
-When the pipeline runs, it creates necessary directories for data storage, database files, and logs.
+## Features
+
+- **Smart Web Scraping**: 
+  - Rate-limited requests with automatic backoff
+  - Handles both current and historical data files
+  - Deduplicates data across yearly archives and individual files
+  - Supports CSV, XLSX, and ZIP formats
+
+- **Robust Data Processing**:
+  - Validates dates, item IDs, descriptions, and index values
+  - Configurable uniqueness constraints on column combinations (e.g. no duplicate date/item_id pairs)
+  - Saves validation issues for review
+  - Uses Polars for efficient data manipulation
+
+- **Database Storage**:
+  - Uses DuckDB for local analytics
+  - Implements tables for items and their corresponding price indices
+  - Handles data updates with duplicate detection
 
 ## Data Model
 
@@ -66,7 +81,7 @@ The database uses two main tables:
 
 ## Configuration
 
-Cnfigurations can be modified in their respective files:
+Configurations can be modified in their respective files:
 
 - `const.py`: Directory paths and project structure
 - `scraper.py`: Web scraping parameters (rate limits, file types)
