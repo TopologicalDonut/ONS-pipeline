@@ -70,7 +70,7 @@ Cnfigurations can be modified in their respective files:
 
 - `const.py`: Directory paths and project structure
 - `scraper.py`: Web scraping parameters (rate limits, file types)
-- `processor.py`: Data validation rules
+- `processor.py`: Column selection and data validation rules
 - `database.py`: Database schema and table configurations
 
 ## Validation Rules
