@@ -2,6 +2,37 @@
 
 A Python-based pipeline for extracting, transforming, and loading Consumer Price Index (CPI) data from the UK Office for National Statistics (ONS).
 
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#overview">Overview</a>
+    </li>
+    <li>
+      <a href="#setup-and-usage">Setup and Usage</a>
+    </li>
+    <li>
+      <a href="#project-structure">Project Structure</a>
+    </li>
+    <li>
+      <a href="#features">Features</a>
+    </li>
+    <li>
+      <a href="#data-model">Data Model</a>
+    </li>
+    <li>
+      <a href="#configuration">Configuration</a>
+    </li>
+    <li>
+      <a href="#validation-rules">Validation Rules</a>
+    </li>
+    <li>
+      <a href="#error-handling">Error Handling</a>
+    </li>
+  </ol>
+</details>
+
 ## Overview
 
 This pipeline:
