@@ -99,16 +99,19 @@ When the pipeline runs, it creates necessary directories for data storage, datab
 
 ## Data Model
 
-The database uses two main tables:
-
-- `items`: Contains CPI item information
-  - `item_id` (PRIMARY KEY)
-  - `item_desc`
-
-- `cpi_data`: Contains price indices
-  - `date`
-  - `item_id` (FOREIGN KEY)
-  - `item_index`
+```mermaid
+erDiagram
+    items {
+        varchar item_id PK
+        varchar item_desc
+    }
+    cpi_data {
+        date date PK
+        varchar item_id PK, FK
+        float item_index
+    }
+    items ||--|{ cpi_data : has
+```
 
 ## Configuration
 
