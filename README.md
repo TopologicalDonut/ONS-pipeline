@@ -52,7 +52,7 @@ Currently only an `environment.yml` is available for conda users. A `requirement
 
 2. Run the pipeline:
    ```bash
-   python -m src.run_pipeline
+   python -m run_pipeline
    ```
 
 When the pipeline runs, it creates necessary directories for data storage, database files, and logs.
