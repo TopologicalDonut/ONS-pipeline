@@ -47,7 +47,7 @@ Currently only an `environment.yml` is available for conda users. A `requirement
 1. Create and activate the conda environment:
    ```bash
    conda env create -f environment.yml
-   conda activate ons-cpi
+   conda activate ONS_pipeline
    ```
 
 2. Run the pipeline:
