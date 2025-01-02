@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import zipfile
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TypedDict
 import requests
 from requests.exceptions import RequestException, HTTPError
 from bs4 import BeautifulSoup
@@ -29,6 +29,19 @@ class WebConfig:
     period_seconds: int = 10
 
 ONS_WEB_CONFIG = WebConfig()
+
+class ArchiveContents(TypedDict):
+    quarterly: set[str]
+    monthly: set[str]
+    other: set[str]
+
+class ScraperStats(TypedDict):
+    main_page_links: set[str]
+    previous_version_links: set[str]
+    yearly_archive_contents: dict[str, ArchiveContents]
+    quarterly_zip_contents: dict[str, ArchiveContents]
+    individual_files: set[str]
+    skipped_files: set[str]
 
 class RequestManager:
     """
@@ -222,7 +235,7 @@ class FileProcessor:
         
         return False
 
-    def check_zip_contents(self, zip_path: Path) -> dict[str, set[str]]:
+    def check_zip_contents(self, zip_path: Path) -> ArchiveContents:
         """
         Examine a zip file's contents, categorizing them by:
           - 'quarterly': set of q_YYYYqN
@@ -230,7 +243,7 @@ class FileProcessor:
           - 'other': set of everything else
         """
         
-        contents: dict[str, set[str]] = {'quarterly': set(), 'monthly': set(), 'other': set()}
+        contents: ArchiveContents = {'quarterly': set(), 'monthly': set(), 'other': set()}
 
         try:
             with zipfile.ZipFile(zip_path) as zf:
@@ -283,7 +296,7 @@ class WebScraper:
         # The LinkScraper needs the normalization logic
         self.link_scraper = LinkScraper(self.file_processor.normalize_filename, self.request_manager)
 
-        self.stats: dict[str, Any] = {
+        self.stats: ScraperStats = {
             'main_page_links': set(),
             'previous_version_links': set(),
             'yearly_archive_contents': {},  # { year: {'quarterly': set(), 'monthly': set(), 'other': set()} }
@@ -469,12 +482,12 @@ class WebScraper:
         """
 
         yearly_files = sum(
-            sum(len(contents[key]) for key in ('monthly', 'quarterly', 'other'))
+            len(contents['quarterly']) + len(contents['monthly']) + len(contents['other'])
             for contents in self.stats['yearly_archive_contents'].values()
         )
 
         quarterly_files = sum(
-            sum(len(contents[key]) for key in ('monthly', 'quarterly', 'other'))
+            len(contents['quarterly']) + len(contents['monthly']) + len(contents['other'])
             for contents in self.stats['quarterly_zip_contents'].values()
         )
 
