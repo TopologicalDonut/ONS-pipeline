@@ -225,34 +225,6 @@ class Processor:
         results.print_summary()
         return final_df
 
-def create_ons_config() -> ProcessorConfig:
-    return ProcessorConfig(
-        column_mapping={
-            'INDEX_DATE': 'date',
-            'ITEM_ID': 'item_id',
-            'ITEM_DESC': 'item_desc',
-            'ALL_GM_INDEX': 'item_index'
-        },
-        validation_rules={
-            'date': [
-                (lambda col: col.is_not_null(), "Missing date"),
-                (lambda col: (col >= 100000) & (col <= 999999), "Invalid date format"),
-                (lambda col: (col % 100 <= 12) & (col % 100 > 0), "Invalid month")
-            ],
-            'item_id': [
-                (lambda col: col.is_not_null(), "Missing item ID")
-            ],
-            'item_desc': [
-                (lambda col: col.is_not_null(), "Missing or Empty description"),
-                (lambda col: col.str.strip_chars().str.len_chars() > 0, "Empty description after trimming")
-            ],
-            'item_index': [
-                (lambda col: col.is_not_null() & (col >= 0), "Invalid index value")
-            ]
-        },
-        duplicate_check_columns=['date', 'item_id']
-    )
-
 def main() -> pl.DataFrame | None:
     try:
         processor = Processor(ONS_CONFIG)

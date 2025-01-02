@@ -8,9 +8,9 @@ from src.const import PATH_CONFIG
 
 logger = logging.getLogger(__name__)
 
-type SQLType = str
-
 DB_NAME = 'ons_cpi.db'
+
+type SQLType = str
 
 @dataclass(frozen=True)
 class TableConfig:
@@ -43,15 +43,6 @@ class DuckDBManager:
 
         self.conn = duckdb.connect(db_path)
         self.config = config
-        
-        # Check which tables exist before creation
-        tables_before = set(self.conn.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_name IN (?, ?)
-        """, [self.config.entity_table, self.config.data_table]).fetchall())
-
-        tables_before = {t[0] for t in tables_before}
 
     def setup_schema(self, force_recreate: bool = False) -> None:
         """
@@ -170,11 +161,9 @@ class DuckDBManager:
             f"Processed: {entities_after - entities_before} new entities ({replaced_entities} updated), "
             f"{measurements_after - measurements_before} new measurements ({replaced_measurements} updated)"
         )
-
-        return None
     
     def preview_tables(self, limit: int = 5) -> tuple[pl.DataFrame, pl.DataFrame]:
-        """Preview both tables."""
+
         entity_preview = self.conn.execute(
             f"SELECT * FROM {self.config.entity_table} LIMIT {limit}"
         ).pl()
@@ -186,7 +175,6 @@ class DuckDBManager:
         return entity_preview, data_preview
 
     def get_table_stats(self) -> dict:
-        """Get statistics about the tables."""
 
         stats = {}
         
@@ -216,7 +204,6 @@ class DuckDBManager:
 
         self.conn.close()
 
-
 def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str = DB_NAME) -> bool:
 
     try:
@@ -237,16 +224,25 @@ def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str
         logger.info("\nMeasurements Table:")
         logger.info(data_preview)
         
-        logger.info("\nDatabase Statistics:")
-        logger.info(f"Total entities: {stats['entity_count']}")
-        logger.info(f"Total measurements: {stats['measurement_count']}")
+        logger.info("-" * 50)
+        logger.info("Database Statistics:")
+        logger.info("-" * 50)
+
+        logger.info(f"  Total entities: {stats['entity_count']}")
+        logger.info(f"  Total measurements: {stats['measurement_count']}")
         if 'date_range' in stats:
-            logger.info(f"Date range: {stats['date_range'][0]} to {stats['date_range'][1]}")
+            logger.info(f"  Date range: {stats['date_range'][0]} to {stats['date_range'][1]}")
+        
+        logger.info("-" * 50)
         
         db_manager.close()
+        
+        logger.info("")
         logger.info(f"Successfully loaded data into {db_path}")
+
         return True
         
     except Exception as e:
         logger.error(f"Failed to load database: {e}", exc_info=True)
+
         return False
