@@ -68,6 +68,10 @@ dependencies:
       - fastexcel==0.12.0
       - idna==3.10
       - iniconfig==2.0.0
+      - mypy==1.14.1
+      - mypy-extensions==1.0.0
+      - numpy==2.2.1
+      - pandas-stubs==2.2.3.241126
       - pluggy==1.5.0
       - polars==1.17.1
       - pyarrow==18.1.0
@@ -75,5 +79,10 @@ dependencies:
       - requests==2.32.3
       - soupsieve==2.6
       - tqdm==4.67.1
+      - types-beautifulsoup4==4.12.0.20241020
+      - types-html5lib==1.1.11.20241018
+      - types-pytz==2024.2.0.20241221
+      - types-requests==2.32.0.20241016
+      - types-tqdm==4.67.0.20241221
       - urllib3==2.2.3
 prefix: C:\Anaconda\envs\ONS_pipeline
