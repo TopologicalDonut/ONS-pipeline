@@ -34,7 +34,7 @@ def run_pipeline() -> None:
             raise RuntimeError("Failed to process data")
         
         logger.info("Step 3: Loading database")
-        
+
         success = load_database(clean_data)
         if not success:
             raise RuntimeError("Failed to load database")

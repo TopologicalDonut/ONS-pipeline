@@ -219,13 +219,12 @@ def main(input_df: pl.DataFrame, db_dir: Path = PATH_CONFIG.DB_DIR, db_name: str
         stats = db_manager.get_table_stats()
         
         logger.info("Table Previews:")
-        logger.info("\nEntities Table:")
-        logger.info(entity_preview)
-        logger.info("\nMeasurements Table:")
-        logger.info(data_preview)
+
+        logger.info(f"\nEntities Table: \n{entity_preview}")
+        logger.info(f"\nMeasurements Table: \n{data_preview}")
         
         logger.info("-" * 50)
-        logger.info("Database Statistics:")
+        logger.info("Database Statistics")
         logger.info("-" * 50)
 
         logger.info(f"  Total entities: {stats['entity_count']}")

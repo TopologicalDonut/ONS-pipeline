@@ -107,24 +107,25 @@ class ProcessingResults:
             logger.info(f"Saved validation problems to {problems_file}")
 
     def print_summary(self) -> None:
-        logger.info("\nProcessing Summary:")
+
+        logger.info("-" * 50)
+        logger.info("Processing Summary")
+        logger.info("-" * 50)
+
         logger.info(f"Files processed: {self.total_files}")
         logger.info(f"Files succeeded: {self.successful_files}")
         logger.info(f"Files failed: {len(self.failed_files)}")
-        
-        if self.failed_files:
-            logger.info("File Errors:")
-            for filepath, error in self.failed_files.items():
-                logger.info(f"{filepath}: {error}")
-
         logger.info(f"Total rows processed: {self.total_rows}")
         
         if self.problem_rows:
-            logger.info("\nValidation Issues:")
+            logger.info("")
+            logger.info("Validation Issues:")
             for reason, count in self.invalid_rows.items():
-                logger.info(f"{reason}: {count}")
-        
+                logger.info(f"  {reason}: {count}")
+            
+        logger.info("")
         logger.info(f"Rows retained: {self.rows_retained}")
+        logger.info("-" * 50)
 
 class Processor:
     def __init__(self, config: ProcessorConfig):
