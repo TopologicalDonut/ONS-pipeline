@@ -68,9 +68,7 @@ When the pipeline runs, it creates necessary directories for data storage, datab
 ├─ src
 │  ├─ __init__.py
 │  ├─ database.py
-│  ├─ logger.py
 │  ├─ processor.py
-│  ├─ reader.py
 │  └─ scraper.py
 └─ tests
    ├─ __init__.py
