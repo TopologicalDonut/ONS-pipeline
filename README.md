@@ -1,6 +1,6 @@
 # ONS CPI Data Pipeline
 
-A Python-based pipeline for extracting, transforming, and loading Consumer Price Index (CPI) data from the UK Office for National Statistics (ONS).
+A Python-based pipeline for extracting, transforming, and loading [Consumer Price Index (CPI) data](https://www.ons.gov.uk/economy/inflationandpriceindices/datasets/consumerpriceindicescpiandretailpricesindexrpiitemindicesandpricequotes) from the UK Office for National Statistics (ONS).
 
 <!-- TABLE OF CONTENTS -->
 <details>
